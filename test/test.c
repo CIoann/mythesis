@@ -47,7 +47,8 @@ int max_speed;  /* Motor maximal speed */
 int app_alive;
 
 enum {
-	MODE_REMOTE,  /* IR remote control */
+	MODE_LEADER,  /* Supervisory - follow the line */
+	MODE_FOLLOWER, /* Follower - Follow the front vehicle */
 	MODE_AUTO,    /* Self-driving */
 };
 
@@ -64,18 +65,22 @@ enum {
 	STEP_BACKWARD,
 };
 
+const char *color[] = { "?", "BLACK", "BLUE", "GREEN", "YELLOW", "RED", "WHITE", "BROWN" };
+#define COLOR_COUNT  (( int )( sizeof( color ) / sizeof( color[ 0 ])))
+uint8_t sn_colour;
+
 int moving;   /* Current moving */
 int command;  /* Command for the 'drive' coroutine */
 int angle;    /* Angle of rotation */
 
-uint8_t ir, touch;  /* Sequence numbers of sensors */
+uint8_t  ir,touch;  /* Sequence numbers of sensors */
 enum { L, R };
 uint8_t motor[ 3 ] = { DESC_LIMIT, DESC_LIMIT, DESC_LIMIT };  /* Sequence numbers of motors */
 
 
 static void _set_mode( int value )
 {
-		set_sensor_mode_inx( ir, LEGO_EV3_IR_IR_PROX );
+	//choose mode! wifi
 		mode = MODE_AUTO;
 
 }
@@ -124,7 +129,7 @@ static void _stop( void )
 int app_init( void )
 {
 	char s[ 16 ];
-//check left motor
+	/*check left motor*/
 	if ( ev3_search_tacho_plugged_in( L_MOTOR_PORT, L_MOTOR_EXT_PORT, motor + L, 0 )) {
 		get_tacho_max_speed( motor[ L ], &max_speed );
 		/* Reset the motor */
@@ -135,7 +140,7 @@ int app_init( void )
 		return ( 0 );
 	}
 
-//check right motor
+	//check right motor
 
 	if ( ev3_search_tacho_plugged_in( R_MOTOR_PORT, R_MOTOR_EXT_PORT, motor + R, 0 )) {
 		/* Reset the motor */
@@ -145,16 +150,26 @@ int app_init( void )
 		/* Inoperative without right motor */
 		return ( 0 );
 	}
+	if (ev3_search_sensor ( LEGO_EV3_COLOR, &sn_colour, 0 )){
+		
+		set_sensor_mode(sn_colour, "COL-COLOR");
+
+	} else {
+		printf( "Color Sensor () is NOT found.\n" );
+		/* Inoperative without color sensor */
+		return ( 0 );
+	}
 	command	= moving = MOVE_NONE;
 
-	
+
+
+
 	return ( 1 );
 }
 
 CORO_CONTEXT( handle_touch );
+CORO_CONTEXT( handle_color );
 CORO_CONTEXT( handle_brick_control );
-CORO_CONTEXT( handle_ir_control );
-CORO_CONTEXT( handle_ir_proximity );
 CORO_CONTEXT( drive );
 
 /* Coroutine of the TOUCH sensor handling */
@@ -169,16 +184,40 @@ CORO_DEFINE( handle_touch )
 		/* Waiting the button is pressed */
 		CORO_WAIT( get_sensor_value( 0, touch, &val ) && ( val ));
 		/* Stop the vehicle */
-		command = MOVE_NONE;
+		command = MOVE_BACKWARD;
 		/* Switch mode */
-		_set_mode(( mode == MODE_REMOTE ) ? MODE_AUTO : MODE_REMOTE );
+		_set_mode(( mode == MODE_LEADER ) ? MODE_AUTO : MODE_LEADER );
 		/* Waiting the button is released */
 		CORO_WAIT( get_sensor_value( 0, touch, &val ) && ( !val ));
 	}
 	CORO_END();
 }
 
-/* Coroutine of the EV3 brick keys handling */
+CORO_DEFINE ( handle_color )
+{
+	CORO_LOCAL int val;
+
+	CORO_BEGIN();
+	if (sn_colour == DESC_LIMIT ) CORO_QUIT();
+
+	for ( ; ; ){
+		CORO_WAIT(get_sensor_value(0, sn_colour, &val ) || ( val > 0 ) || ( val <= COLOR_COUNT ));
+		printf( "\r(%s)", color[ val ]);
+		fflush( stdout );
+		if (val == 1) {
+			command = MOVE_FORWARD;
+		}else{
+			command = TURN_LEFT;
+		}
+
+	
+		CORO_WAIT(get_sensor_value(0, sn_colour, &val ) || ( val > 0 ) || ( val <= COLOR_COUNT ));
+		
+	}
+	CORO_END();
+}
+/* Coroutine of the EV3 brick keys handling 
+	define leader and follower manually*/
 CORO_DEFINE( handle_brick_control )
 {
 	CORO_LOCAL uint8_t keys, pressed = EV3_KEY__NONE_;
@@ -190,16 +229,15 @@ CORO_DEFINE( handle_brick_control )
 		pressed = keys;
 
 		if ( pressed & EV3_KEY_BACK ) {
-			/* Stop the vehicle */
 			command = MOVE_NONE;
-			/* Quit */
-			app_alive = 0;
+			_set_mode(( mode == MODE_FOLLOWER ) ? MODE_AUTO : MODE_FOLLOWER );
+
 
 		} else if ( pressed & EV3_KEY_UP ) {
 			/* Stop the vehicle */
 			command = MOVE_NONE;
 			/* Switch mode */
-			_set_mode(( mode == MODE_REMOTE ) ? MODE_AUTO : MODE_REMOTE );
+			_set_mode(( mode == MODE_LEADER ) ? MODE_AUTO : MODE_LEADER );
 		}
 		CORO_YIELD();
 	}
@@ -280,9 +318,18 @@ int main( void )
 
 	app_alive = app_init();
 	while ( app_alive ) {
-		CORO_CALL( handle_touch );
-		CORO_CALL( handle_brick_control );
+
 		command=MOVE_FORWARD;
+		CORO_CALL( handle_touch );
+		CORO_CALL( handle_color );
+		CORO_CALL( handle_brick_control );
+		if (mode == MODE_LEADER){
+			//FOLLOW THE LINE
+		}else{
+			//FOLLOW THE VEHICLE IN FRONT
+		}
+
+
 		CORO_CALL( drive );
 		Sleep( 10 );
 	}
