@@ -81,7 +81,7 @@ uint8_t motor[ 3 ] = { DESC_LIMIT, DESC_LIMIT, DESC_LIMIT };  /* Sequence number
 static void _set_mode( int value )
 {
 	//choose mode! wifi
-		mode = MODE_AUTO;
+		mode = MODE_LEADER;
 
 }
 
@@ -170,8 +170,9 @@ int app_init( void )
 CORO_CONTEXT( handle_touch );
 CORO_CONTEXT( handle_color );
 CORO_CONTEXT( handle_brick_control );
-CORO_CONTEXT( drive );
 
+CORO_CONTEXT( supervisory_drive);
+CORO_CONTEXT( drive );
 /* Coroutine of the TOUCH sensor handling */
 CORO_DEFINE( handle_touch )
 {
@@ -208,14 +209,13 @@ CORO_DEFINE ( handle_color )
 			command = MOVE_FORWARD;
 		}else{
 			command = TURN_LEFT;
-		}
-
-	
-		CORO_WAIT(get_sensor_value(0, sn_colour, &val ) || ( val > 0 ) || ( val <= COLOR_COUNT ));
-		
+		}		
 	}
 	CORO_END();
 }
+
+
+
 /* Coroutine of the EV3 brick keys handling 
 	define leader and follower manually*/
 CORO_DEFINE( handle_brick_control )
@@ -243,7 +243,29 @@ CORO_DEFINE( handle_brick_control )
 	}
 	CORO_END();
 }
+/* Drive supervisory follow line pid CONTROL*/
+CORO_DEFINE( supervisory_drive )
+ {
+// int power = 50
+// int minRef = 40;
+// int maxRef = 100;
+// int target = 55;
+// float kp = float(0.65);
+// float kd = 1;
+// float ki = float(0.02);
+// int direction = -1;
+// float  lastError, error , integral = 0;
 
+//         refRead = col.value()
+//         error = target - (100 * ( refRead - minRef ) / ( maxRef - minRef ))
+//         derivative = error - lastError
+//         lastError = error
+//         integral = float(0.5) * integral + error
+//         course = (kp * error + kd * derivative +ki * integral) * direction
+//         for (motor, pow) in zip((left_motor, right_motor), steering2(course, power)):
+//             motor.duty_cycle_sp = pow
+//         sleep(0.01) # Aprox 100Hz
+}
 
 
 /* Coroutine of control the motors */
@@ -306,7 +328,6 @@ CORO_DEFINE( drive )
 	}
 	CORO_END();
 }
-
 int main( void )
 {
 	printf( "Waiting the EV3 brick online...\n" );
@@ -324,13 +345,15 @@ int main( void )
 		CORO_CALL( handle_color );
 		CORO_CALL( handle_brick_control );
 		if (mode == MODE_LEADER){
+			CORO_CALL( supervisory_drive );
+			
+		CORO_CALL( drive );
 			//FOLLOW THE LINE
 		}else{
 			//FOLLOW THE VEHICLE IN FRONT
 		}
 
 
-		CORO_CALL( drive );
 		Sleep( 10 );
 	}
 	ev3_uninit();
