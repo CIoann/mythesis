@@ -171,7 +171,7 @@ CORO_CONTEXT( handle_touch );
 CORO_CONTEXT( handle_color );
 CORO_CONTEXT( handle_brick_control );
 
-CORO_CONTEXT( supervisory_drive);
+//CORO_CONTEXT( supervisory_drive);
 CORO_CONTEXT( drive );
 /* Coroutine of the TOUCH sensor handling */
 CORO_DEFINE( handle_touch )
@@ -187,7 +187,7 @@ CORO_DEFINE( handle_touch )
 		/* Stop the vehicle */
 		command = MOVE_BACKWARD;
 		/* Switch mode */
-		_set_mode(( mode == MODE_LEADER ) ? MODE_AUTO : MODE_LEADER );
+		_set_mode(( mode == MODE_LEADER ) ? MODE_LEADER : MODE_LEADER );
 		/* Waiting the button is released */
 		CORO_WAIT( get_sensor_value( 0, touch, &val ) && ( !val ));
 	}
@@ -201,16 +201,14 @@ CORO_DEFINE ( handle_color )
 	CORO_BEGIN();
 	if (sn_colour == DESC_LIMIT ) CORO_QUIT();
 
-	for ( ; ; ){
-		CORO_WAIT(get_sensor_value(0, sn_colour, &val ) || ( val > 0 ) || ( val <= COLOR_COUNT ));
+		CORO_WAIT(get_sensor_value(0, sn_colour, &val ) || ( val < 0 ));
 		printf( "\r(%s)", color[ val ]);
 		fflush( stdout );
-		if (val == 1) {
-			command = MOVE_FORWARD;
+		if (val ==1) {
+			command = MOVE_BACKWARD;
 		}else{
 			command = TURN_LEFT;
-		}		
-	}
+		}
 	CORO_END();
 }
 
@@ -230,22 +228,22 @@ CORO_DEFINE( handle_brick_control )
 
 		if ( pressed & EV3_KEY_BACK ) {
 			command = MOVE_NONE;
-			_set_mode(( mode == MODE_FOLLOWER ) ? MODE_AUTO : MODE_FOLLOWER );
+			_set_mode(( mode == MODE_FOLLOWER ) ? MODE_LEADER : MODE_LEADER );
 
 
 		} else if ( pressed & EV3_KEY_UP ) {
 			/* Stop the vehicle */
 			command = MOVE_NONE;
 			/* Switch mode */
-			_set_mode(( mode == MODE_LEADER ) ? MODE_AUTO : MODE_LEADER );
+			_set_mode(( mode == MODE_LEADER ) ? MODE_LEADER : MODE_LEADER );
 		}
 		CORO_YIELD();
 	}
 	CORO_END();
 }
 /* Drive supervisory follow line pid CONTROL*/
-CORO_DEFINE( supervisory_drive )
- {
+//CORO_DEFINE( supervisory_drive )
+// {
 // int power = 50
 // int minRef = 40;
 // int maxRef = 100;
@@ -265,7 +263,7 @@ CORO_DEFINE( supervisory_drive )
 //         for (motor, pow) in zip((left_motor, right_motor), steering2(course, power)):
 //             motor.duty_cycle_sp = pow
 //         sleep(0.01) # Aprox 100Hz
-}
+//}
 
 
 /* Coroutine of control the motors */
@@ -340,20 +338,23 @@ int main( void )
 	app_alive = app_init();
 	while ( app_alive ) {
 
-		command=MOVE_FORWARD;
+//		command=MOVE_FORWARD;
+
 		CORO_CALL( handle_touch );
-		CORO_CALL( handle_color );
+		//CORO_CALL( handle_color );
 		CORO_CALL( handle_brick_control );
+//CORO_CALL(drive);
 		if (mode == MODE_LEADER){
-			CORO_CALL( supervisory_drive );
-			
-		CORO_CALL( drive );
+		CORO_CALL(handle_color);
+//			CORO_CALL( supervisory_drive );
+		CORO_CALL(drive);	
+//		CORO_CALL( drive );
 			//FOLLOW THE LINE
 		}else{
 			//FOLLOW THE VEHICLE IN FRONT
 		}
 
-
+//CORO_CALL(drive);
 		Sleep( 10 );
 	}
 	ev3_uninit();
@@ -361,3 +362,4 @@ int main( void )
 
 	return ( 0 );
 }
+
